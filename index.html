@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PCOS MoA-Guided Correction Demonstration Tool</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js"></script>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --border: #d9dee8;
+      --text: #172033;
+      --muted: #667085;
+      --purple: #6a1b9a;
+      --green: #1b8a5a;
+      --red: #c0392b;
+      --orange: #f39c12;
+      --grey: #d5d9e2;
+      --edgeGrey: #cfd5df;
+      --hyper: #111827;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 285px minmax(520px, 1fr) 330px;
+      height: 100vh;
+      width: 100vw;
+      gap: 10px;
+      padding: 10px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 3px 12px rgba(16, 24, 40, 0.06);
+      overflow: hidden;
+    }
+    .left, .right { padding: 14px; overflow: auto; }
+    .network-panel { position: relative; display: flex; flex-direction: column; }
+    #network { width: 100%; height: 100%; min-height: 640px; background: #fff; border-radius: 14px; }
+    h1 { font-size: 17px; margin: 0 0 8px; line-height: 1.25; }
+    h2 { font-size: 14px; margin: 14px 0 8px; }
+    .subtitle { font-size: 12px; line-height: 1.35; color: var(--muted); margin-bottom: 12px; }
+    .note {
+      font-size: 11.5px;
+      line-height: 1.35;
+      padding: 9px;
+      border-radius: 10px;
+      background: #f1f5ff;
+      color: #344054;
+      margin-bottom: 12px;
+    }
+    button, select, input {
+      font-family: inherit;
+      font-size: 13px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+    }
+    .activeBtn {
+      width: 100%;
+      padding: 8px 9px;
+      margin: 4px 0;
+      text-align: left;
+      background: #fff;
+      color: var(--text);
+      cursor: pointer;
+      transition: 0.15s ease;
+    }
+    .activeBtn:hover { background: #f4f3ff; border-color: #b9a8ff; }
+    .activeBtn.selected { background: #eee7ff; border-color: var(--purple); font-weight: 700; }
+    .controls { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 12px; }
+    .controls label { font-size: 12px; color: var(--muted); font-weight: 700; }
+    .controls select, .controls input { width: 100%; padding: 8px; background: #fff; }
+    .toolrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .btn {
+      padding: 8px 9px;
+      cursor: pointer;
+      background: #fff;
+    }
+    .btn.primary { background: #2f56d3; border-color: #2f56d3; color: #fff; }
+    .btn.warn { background: #fff8e1; border-color: #f6c546; }
+    .legendItem { display: flex; align-items: center; gap: 7px; margin: 6px 0; font-size: 12px; }
+    .swatch { width: 14px; height: 14px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,0.12); }
+    .swatch.line { height: 4px; border-radius: 2px; }
+    .s-purple { background: var(--purple); }
+    .s-green { background: var(--green); }
+    .s-red { background: var(--red); }
+    .s-orange { background: var(--orange); }
+    .s-grey { background: var(--grey); }
+    .s-border { background: #fff; border: 3px solid #111; }
+    #selectedTitle { font-size: 16px; font-weight: 800; margin-bottom: 8px; }
+    .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+    .stat { background: #f7f8fb; border: 1px solid var(--border); border-radius: 10px; padding: 9px; }
+    .stat .label { font-size: 11px; color: var(--muted); }
+    .stat .value { font-size: 16px; font-weight: 800; margin-top: 3px; }
+    .targetList, .nodeList, .cascadeList { padding-left: 18px; font-size: 12px; line-height: 1.45; }
+    .pill {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-left: 4px;
+    }
+    .pill.up { background: #eaf7ef; color: var(--green); }
+    .pill.down { background: #ffebea; color: var(--red); }
+    .pill.mix { background: #fff4db; color: #915f00; }
+    .topbar {
+      position: absolute;
+      z-index: 10;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+    .badge {
+      pointer-events: auto;
+      background: rgba(255,255,255,0.92);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 12px;
+      color: #344054;
+    }
+    .missing { color: #b42318; font-weight: 700; }
+    @media (max-width: 1100px) {
+      .app { grid-template-columns: 260px 1fr; grid-template-rows: 1fr auto; }
+      .right { grid-column: 1 / span 2; max-height: 330px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel left">
+    <h1>MoA-Guided Correction Demonstration</h1>
+    <div class="subtitle">Interactive visualization for demonstrating active-specific correction within the PCOS hyperandrogenism network.</div>
+
+    <div class="controls">
+      <div>
+        <label for="depthSelect">Propagation depth</label>
+        <select id="depthSelect">
+          <option value="1">1 edge</option>
+          <option value="2">2 edges</option>
+          <option value="3" selected>3 edges</option>
+          <option value="4">4 edges</option>
+          <option value="5">5 edges</option>
+          <option value="999">Full downstream</option>
+        </select>
+      </div>
+      <div>
+        <label for="searchBox">Search node</label>
+        <input id="searchBox" placeholder="Type node name..." />
+      </div>
+      <div class="toolrow">
+        <button class="btn warn" id="resetBtn">Reset</button>
+        <button class="btn primary" id="exportBtn">Export PNG</button>
+      </div>
+    </div>
+
+    <h2>Actives</h2>
+    <div id="activeButtons"></div>
+
+    <h2>Legend</h2>
+    <div class="legendItem"><span class="swatch s-purple"></span> Primary MoA target</div>
+    <div class="legendItem"><span class="swatch line s-orange"></span> Active → target correction</div>
+    <div class="legendItem"><span class="swatch s-green"></span> Correction increases node</div>
+    <div class="legendItem"><span class="swatch s-red"></span> Correction decreases node</div>
+    <div class="legendItem"><span class="swatch s-orange"></span> Mixed/conflicting downstream signal</div>
+    <div class="legendItem"><span class="swatch s-grey"></span> Hidden after active selection</div>
+    <div class="legendItem"><span class="swatch s-border"></span> Hyperandrogenism</div>
+  </aside>
+
+  <main class="panel network-panel">
+    <div class="topbar">
+      <div class="badge" id="modeBadge">Select an active to highlight propagation</div>
+      <div class="badge">MoA-guided correction view</div>
+    </div>
+    <div id="network"></div>
+  </main>
+
+  <aside class="panel right">
+    <div id="selectedTitle">No active selected</div>
+    <div class="subtitle">Click an active to focus only on its target nodes and downstream correction route.</div>
+
+    <div class="statgrid">
+      <div class="stat"><div class="label">Affected nodes</div><div class="value" id="affectedCount">0</div></div>
+      <div class="stat"><div class="label">Hyperandrogenism reached</div><div class="value" id="hyperReached">—</div></div>
+    </div>
+
+    <h2>Primary target node(s)</h2>
+    <ul class="targetList" id="targetList"><li>—</li></ul>
+
+    <h2>Representative cascade to Hyperandrogenism</h2>
+    <ol class="cascadeList" id="cascadeList"><li>—</li></ol>
+
+    <h2>Downstream affected nodes</h2>
+    <ul class="nodeList" id="affectedList"><li>—</li></ul>
+  </aside>
+</div>
+
+<script>
+const rawNodes = [{"id": "Prenatal androgen exposure", "label": "Prenatal androgen exposure", "status": "High", "score": 100.0}, {"id": "Kisspeptin", "label": "Kisspeptin", "status": "High", "score": 100.0}, {"id": "GnRH", "label": "GnRH", "status": "High", "score": 67.79}, {"id": "Neurokinin B", "label": "Neurokinin B", "status": "High", "score": 100.0}, {"id": "Dynorphin", "label": "Dynorphin", "status": "Low", "score": 0.0}, {"id": "Thyroid hormone", "label": "Thyroid hormone", "status": "Low", "score": 0.0}, {"id": "TRH", "label": "TRH", "status": "High", "score": 0.0}, {"id": "Prolactin", "label": "Prolactin", "status": "High", "score": 0.0}, {"id": "LH", "label": "LH", "status": "High", "score": 85.23}, {"id": "FSH", "label": "FSH", "status": "Low", "score": -85.84}, {"id": "CYP17A1", "label": "CYP17A1", "status": "High", "score": 94.21}, {"id": "Progesterone (steroid precursor)", "label": "Progesterone (steroid precursor)", "status": "High", "score": 85.23}, {"id": "Androstenedione", "label": "Androstenedione", "status": "High", "score": 93.15}, {"id": "Theca cells", "label": "Theca cells", "status": "High", "score": 100.0}, {"id": "Steroidogenic enzymes", "label": "Steroidogenic enzymes", "status": "High", "score": 92.21}, {"id": "DENND1A.V2", "label": "DENND1A.V2", "status": "High", "score": 100.0}, {"id": "CYB5A", "label": "CYB5A", "status": "High", "score": 100.0}, {"id": "Insulin / serine kinase activity", "label": "Insulin / serine kinase activity", "status": "High", "score": 100.0}, {"id": "P450c17 phosphorylation", "label": "P450c17 phosphorylation", "status": "High", "score": 100.0}, {"id": "Testosterone", "label": "Testosterone", "status": "High", "score": 88.86}, {"id": "Circulating androgen pool", "label": "Circulating androgen pool", "status": "High", "score": 85.56}, {"id": "Hyperandrogenism", "label": "Hyperandrogenism", "status": "High", "score": 56.11}, {"id": "Follicular arrest", "label": "Follicular arrest", "status": "High", "score": 96.82}, {"id": "Progesterone (luteal)", "label": "Progesterone (luteal)", "status": "Low", "score": -88.86}, {"id": "Small antral follicles", "label": "Small antral follicles", "status": "High", "score": 96.82}, {"id": "AMH", "label": "AMH", "status": "High", "score": 96.82}, {"id": "Inhibin B", "label": "Inhibin B", "status": "High", "score": 96.82}, {"id": "FSH action", "label": "FSH action", "status": "Low", "score": -98.41}, {"id": "Aromatase", "label": "Aromatase", "status": "Low", "score": -92.92}, {"id": "Estradiol", "label": "Estradiol", "status": "High", "score": 92.92}, {"id": "Reduced aromatization", "label": "Reduced aromatization", "status": "High", "score": 94.87}, {"id": "Chronic stress", "label": "Chronic stress", "status": "High", "score": 100.0}, {"id": "CRH", "label": "CRH", "status": "High", "score": 100.0}, {"id": "ACTH", "label": "ACTH", "status": "High", "score": 100.0}, {"id": "DHEAS", "label": "DHEAS", "status": "High", "score": 100.0}, {"id": "Estrone", "label": "Estrone", "status": "High", "score": 93.15}, {"id": "Poor fetal growth", "label": "Poor fetal growth", "status": "High", "score": 100.0}, {"id": "Insulin resistance", "label": "Insulin resistance", "status": "High", "score": 60.0}, {"id": "Insulin receptor", "label": "Insulin receptor", "status": "Low", "score": 0.0}, {"id": "IRS-1", "label": "IRS-1", "status": "Low", "score": 0.0}, {"id": "PI3K-Akt", "label": "PI3K-Akt", "status": "Low", "score": 0.0}, {"id": "GLUT4 translocation", "label": "GLUT4 translocation", "status": "Low", "score": 0.0}, {"id": "Glucose uptake", "label": "Glucose uptake", "status": "Low", "score": 0.0}, {"id": "Insulin", "label": "Insulin", "status": "High", "score": 80.0}, {"id": "High glycemic load diet", "label": "High glycemic load diet", "status": "High", "score": 100.0}, {"id": "AKR1C3", "label": "AKR1C3", "status": "High", "score": 80.0}, {"id": "11-KT", "label": "11-KT", "status": "High", "score": 80.0}, {"id": "Testosterone and 11-KT", "label": "Testosterone and 11-KT", "status": "High", "score": 100.0}, {"id": "Androgen-responsive genes", "label": "Androgen-responsive genes", "status": "High", "score": 84.43}, {"id": "DHT", "label": "DHT", "status": "High", "score": 88.86}, {"id": "FHL2", "label": "FHL2", "status": "High", "score": 88.86}, {"id": "C/EBPβ", "label": "C/EBPβ", "status": "Low", "score": -88.86}, {"id": "Ovulatory genes", "label": "Ovulatory genes", "status": "Low", "score": -88.86}, {"id": "SHBG", "label": "SHBG", "status": "Low", "score": -26.67}, {"id": "Thyroid axis", "label": "Thyroid axis", "status": "Low", "score": 0.0}, {"id": "Free testosterone", "label": "Free testosterone", "status": "High", "score": 26.67}, {"id": "IGFBP-1", "label": "IGFBP-1", "status": "Low", "score": -80.0}, {"id": "IGF-1", "label": "IGF-1", "status": "High", "score": 80.0}, {"id": "Growth hormone", "label": "Growth hormone", "status": "High", "score": 100.0}, {"id": "IGF-1 signaling", "label": "IGF-1 signaling", "status": "High", "score": 100.0}, {"id": "Adiponectin", "label": "Adiponectin", "status": "Low", "score": -100.0}, {"id": "AMPK", "label": "AMPK", "status": "Low", "score": -100.0}, {"id": "mTOR", "label": "mTOR", "status": "High", "score": 100.0}, {"id": "Granulosa dysfunction", "label": "Granulosa dysfunction", "status": "High", "score": 100.0}, {"id": "Autophagy", "label": "Autophagy", "status": "Low", "score": -100.0}, {"id": "Granulosa cell apoptosis", "label": "Granulosa cell apoptosis", "status": "High", "score": 100.0}, {"id": "Oxidative stress", "label": "Oxidative stress", "status": "High", "score": 100.0}, {"id": "Mitochondrial function", "label": "Mitochondrial function", "status": "Low", "score": -100.0}, {"id": "ROS", "label": "ROS", "status": "High", "score": 100.0}, {"id": "Granulosa cell glycolysis", "label": "Granulosa cell glycolysis", "status": "Low", "score": -100.0}, {"id": "Ovulation", "label": "Ovulation", "status": "Low", "score": -88.86}, {"id": "Visceral adiposity", "label": "Visceral adiposity", "status": "High", "score": 100.0}, {"id": "Ghrelin", "label": "Ghrelin", "status": "Low", "score": -100.0}, {"id": "17-OHP", "label": "17-OHP", "status": "High", "score": 100.0}, {"id": "Advanced glycation end products", "label": "Advanced glycation end products", "status": "High", "score": 100.0}, {"id": "Poor sleep", "label": "Poor sleep", "status": "High", "score": 100.0}, {"id": "Melatonin", "label": "Melatonin", "status": "Low", "score": -100.0}, {"id": "Inflammatory cytokines", "label": "Inflammatory cytokines", "status": "High", "score": 100.0}, {"id": "Gut microbiota", "label": "Gut microbiota", "status": "Low", "score": 0.0}, {"id": "Chronic inflammation", "label": "Chronic inflammation", "status": "High", "score": 0.0}, {"id": "Ovarian steroidogenesis", "label": "Ovarian steroidogenesis", "status": "High", "score": 64.07}, {"id": "KNDy neuropeptides", "label": "KNDy neuropeptides", "status": "High", "score": 88.86}];
+const rawEdges = [{"id": "e0", "from": "Prenatal androgen exposure", "to": "Kisspeptin", "sign": 1}, {"id": "e1", "from": "Kisspeptin", "to": "GnRH", "sign": 1}, {"id": "e2", "from": "Neurokinin B", "to": "GnRH", "sign": 1}, {"id": "e3", "from": "Dynorphin", "to": "GnRH", "sign": -1}, {"id": "e4", "from": "Thyroid hormone", "to": "TRH", "sign": -1}, {"id": "e5", "from": "TRH", "to": "Prolactin", "sign": 1}, {"id": "e6", "from": "Prolactin", "to": "GnRH", "sign": 1}, {"id": "e7", "from": "GnRH", "to": "LH", "sign": 1}, {"id": "e8", "from": "GnRH", "to": "FSH", "sign": -1}, {"id": "e9", "from": "LH", "to": "CYP17A1", "sign": 1}, {"id": "e10", "from": "LH", "to": "Progesterone (steroid precursor)", "sign": 1}, {"id": "e11", "from": "Progesterone (steroid precursor)", "to": "Androstenedione", "sign": 1}, {"id": "e12", "from": "Prenatal androgen exposure", "to": "Theca cells", "sign": 1}, {"id": "e13", "from": "Theca cells", "to": "Steroidogenic enzymes", "sign": 1}, {"id": "e14", "from": "DENND1A.V2", "to": "CYP17A1", "sign": 1}, {"id": "e15", "from": "CYB5A", "to": "CYP17A1", "sign": 1}, {"id": "e16", "from": "Insulin / serine kinase activity", "to": "P450c17 phosphorylation", "sign": 1}, {"id": "e17", "from": "P450c17 phosphorylation", "to": "CYP17A1", "sign": 1}, {"id": "e18", "from": "CYP17A1", "to": "Androstenedione", "sign": 1}, {"id": "e19", "from": "Androstenedione", "to": "Testosterone", "sign": 1}, {"id": "e20", "from": "Testosterone", "to": "Circulating androgen pool", "sign": 1}, {"id": "e21", "from": "Circulating androgen pool", "to": "Hyperandrogenism", "sign": 1}, {"id": "e22", "from": "Testosterone", "to": "Follicular arrest", "sign": 1}, {"id": "e23", "from": "Progesterone (luteal)", "to": "GnRH", "sign": -1}, {"id": "e24", "from": "Follicular arrest", "to": "Small antral follicles", "sign": 1}, {"id": "e25", "from": "Small antral follicles", "to": "AMH", "sign": 1}, {"id": "e26", "from": "Small antral follicles", "to": "Inhibin B", "sign": 1}, {"id": "e27", "from": "AMH", "to": "GnRH", "sign": 1}, {"id": "e28", "from": "AMH", "to": "FSH action", "sign": -1}, {"id": "e29", "from": "Inhibin B", "to": "FSH", "sign": -1}, {"id": "e30", "from": "FSH", "to": "Aromatase", "sign": 1}, {"id": "e31", "from": "Aromatase", "to": "Estradiol", "sign": -1}, {"id": "e32", "from": "Estradiol", "to": "FSH", "sign": -1}, {"id": "e33", "from": "Inhibin B", "to": "Reduced aromatization", "sign": 1}, {"id": "e34", "from": "Reduced aromatization", "to": "Circulating androgen pool", "sign": 1}, {"id": "e35", "from": "Chronic stress", "to": "CRH", "sign": 1}, {"id": "e36", "from": "CRH", "to": "ACTH", "sign": 1}, {"id": "e37", "from": "ACTH", "to": "DHEAS", "sign": 1}, {"id": "e38", "from": "DHEAS", "to": "Androstenedione", "sign": 1}, {"id": "e39", "from": "Androstenedione", "to": "Estrone", "sign": 1}, {"id": "e40", "from": "Estrone", "to": "LH", "sign": 1}, {"id": "e41", "from": "Poor fetal growth", "to": "Insulin resistance", "sign": 1}, {"id": "e42", "from": "Insulin receptor", "to": "IRS-1", "sign": 1}, {"id": "e43", "from": "IRS-1", "to": "PI3K-Akt", "sign": 1}, {"id": "e44", "from": "PI3K-Akt", "to": "GLUT4 translocation", "sign": 1}, {"id": "e45", "from": "GLUT4 translocation", "to": "Glucose uptake", "sign": 1}, {"id": "e46", "from": "Insulin resistance", "to": "Insulin", "sign": 1}, {"id": "e47", "from": "High glycemic load diet", "to": "Insulin", "sign": 1}, {"id": "e48", "from": "Insulin", "to": "CYP17A1", "sign": 1}, {"id": "e49", "from": "Insulin", "to": "Testosterone", "sign": 1}, {"id": "e50", "from": "Insulin", "to": "AKR1C3", "sign": 1}, {"id": "e51", "from": "AKR1C3", "to": "Testosterone", "sign": 1}, {"id": "e52", "from": "AKR1C3", "to": "11-KT", "sign": 1}, {"id": "e53", "from": "Testosterone and 11-KT", "to": "Circulating androgen pool", "sign": 1}, {"id": "e54", "from": "11-KT", "to": "Circulating androgen pool", "sign": 1}, {"id": "e55", "from": "Androgen-responsive genes", "to": "Steroidogenic enzymes", "sign": 1}, {"id": "e56", "from": "11-KT", "to": "Androgen-responsive genes", "sign": 1}, {"id": "e57", "from": "Testosterone", "to": "DHT", "sign": 1}, {"id": "e58", "from": "DHT", "to": "Androgen-responsive genes", "sign": 1}, {"id": "e59", "from": "DHT", "to": "FHL2", "sign": 1}, {"id": "e60", "from": "FHL2", "to": "C/EBPβ", "sign": -1}, {"id": "e61", "from": "C/EBPβ", "to": "Ovulatory genes", "sign": 1}, {"id": "e62", "from": "Insulin", "to": "SHBG", "sign": -1}, {"id": "e63", "from": "Thyroid axis", "to": "SHBG", "sign": 1}, {"id": "e64", "from": "SHBG", "to": "Free testosterone", "sign": -1}, {"id": "e65", "from": "Insulin", "to": "IGFBP-1", "sign": -1}, {"id": "e66", "from": "IGFBP-1", "to": "IGF-1", "sign": -1}, {"id": "e67", "from": "IGF-1", "to": "Testosterone", "sign": 1}, {"id": "e68", "from": "Growth hormone", "to": "IGF-1 signaling", "sign": 1}, {"id": "e69", "from": "Growth hormone", "to": "Testosterone", "sign": 1}, {"id": "e70", "from": "IGF-1 signaling", "to": "FSH action", "sign": -1}, {"id": "e71", "from": "IGF-1 signaling", "to": "CYP17A1", "sign": 1}, {"id": "e72", "from": "Adiponectin", "to": "AMPK", "sign": 1}, {"id": "e73", "from": "AMPK", "to": "mTOR", "sign": -1}, {"id": "e74", "from": "mTOR", "to": "Granulosa dysfunction", "sign": 1}, {"id": "e75", "from": "Granulosa dysfunction", "to": "Aromatase", "sign": -1}, {"id": "e76", "from": "AMPK", "to": "Autophagy", "sign": 1}, {"id": "e77", "from": "Autophagy", "to": "Granulosa cell apoptosis", "sign": -1}, {"id": "e78", "from": "Granulosa cell apoptosis", "to": "Follicular arrest", "sign": 1}, {"id": "e79", "from": "Oxidative stress", "to": "Mitochondrial function", "sign": -1}, {"id": "e80", "from": "Mitochondrial function", "to": "ROS", "sign": -1}, {"id": "e81", "from": "ROS", "to": "Granulosa cell glycolysis", "sign": -1}, {"id": "e82", "from": "Granulosa cell glycolysis", "to": "Follicular arrest", "sign": -1}, {"id": "e83", "from": "Ovulation", "to": "Progesterone (luteal)", "sign": 1}, {"id": "e84", "from": "Visceral adiposity", "to": "Ghrelin", "sign": -1}, {"id": "e85", "from": "Ghrelin", "to": "17-OHP", "sign": -1}, {"id": "e86", "from": "17-OHP", "to": "Testosterone", "sign": 1}, {"id": "e87", "from": "Visceral adiposity", "to": "Adiponectin", "sign": -1}, {"id": "e88", "from": "Adiponectin", "to": "Insulin resistance", "sign": -1}, {"id": "e89", "from": "Advanced glycation end products", "to": "ROS", "sign": 1}, {"id": "e90", "from": "Poor sleep", "to": "Melatonin", "sign": -1}, {"id": "e91", "from": "Melatonin", "to": "LH", "sign": -1}, {"id": "e92", "from": "Melatonin", "to": "ROS", "sign": -1}, {"id": "e93", "from": "ROS", "to": "Inflammatory cytokines", "sign": 1}, {"id": "e94", "from": "Inflammatory cytokines", "to": "Insulin resistance", "sign": 1}, {"id": "e95", "from": "Gut microbiota", "to": "Chronic inflammation", "sign": -1}, {"id": "e96", "from": "Chronic inflammation", "to": "Insulin resistance", "sign": 1}, {"id": "e97", "from": "Chronic inflammation", "to": "Ovarian steroidogenesis", "sign": 1}, {"id": "e98", "from": "Chronic inflammation", "to": "SHBG", "sign": -1}, {"id": "e99", "from": "Insulin", "to": "LH", "sign": 1}, {"id": "e100", "from": "Testosterone", "to": "KNDy neuropeptides", "sign": 1}, {"id": "e101", "from": "Steroidogenic enzymes", "to": "Ovarian steroidogenesis", "sign": 1}, {"id": "e102", "from": "Aromatase", "to": "Reduced aromatization", "sign": -1}, {"id": "e103", "from": "Glucose uptake", "to": "Insulin resistance", "sign": -1}, {"id": "e104", "from": "Ovarian steroidogenesis", "to": "Circulating androgen pool", "sign": 1}, {"id": "e105", "from": "Free testosterone", "to": "Hyperandrogenism", "sign": 1}, {"id": "e106", "from": "Ovulatory genes", "to": "Ovulation", "sign": 1}, {"id": "e107", "from": "KNDy neuropeptides", "to": "GnRH", "sign": 1}, {"id": "e108", "from": "ROS", "to": "Ovarian steroidogenesis", "sign": 1}, {"id": "e109", "from": "FSH action", "to": "Follicular arrest", "sign": -1}];
+const moaTable = [{"active": "Drospirenone", "target": "LH", "direction": -1}, {"active": "Drospirenone", "target": "SHBG", "direction": 1}, {"active": "Drospirenone", "target": "Androgen-responsive genes", "direction": -1}, {"active": "Metformin", "target": "Insulin resistance", "direction": -1}, {"active": "Metformin", "target": "Insulin", "direction": -1}, {"active": "Metformin", "target": "AMPK", "direction": 1}, {"active": "Cyproterone acetate", "target": "LH", "direction": -1}, {"active": "Cyproterone acetate", "target": "SHBG", "direction": 1}, {"active": "Cyproterone acetate", "target": "Androgen-responsive genes", "direction": -1}, {"active": "Desogestrel", "target": "LH", "direction": -1}, {"active": "Desogestrel", "target": "SHBG", "direction": 1}, {"active": "Pioglitazone", "target": "Adiponectin", "direction": 1}, {"active": "Pioglitazone", "target": "Insulin resistance", "direction": -1}, {"active": "Pioglitazone", "target": "Insulin", "direction": -1}, {"active": "Atorvastatin", "target": "Ovarian steroidogenesis", "direction": -1}, {"active": "Atorvastatin", "target": "Chronic inflammation", "direction": -1}, {"active": "Flutamide", "target": "Androgen-responsive genes", "direction": -1}, {"active": "Rosiglitazone", "target": "Adiponectin", "direction": 1}, {"active": "Rosiglitazone", "target": "Insulin resistance", "direction": -1}, {"active": "Rosiglitazone", "target": "Insulin", "direction": -1}, {"active": "Vitamin D", "target": "Insulin resistance", "direction": -1}, {"active": "Vitamin D", "target": "Chronic inflammation", "direction": -1}, {"active": "Vitamin D", "target": "Oxidative stress", "direction": -1}, {"active": "Finasteride", "target": "DHT", "direction": -1}, {"active": "Simvastatin", "target": "Ovarian steroidogenesis", "direction": -1}, {"active": "Simvastatin", "target": "Chronic inflammation", "direction": -1}];
+
+const COLORS = {
+  grey: '#d5d9e2',
+  edgeGrey: '#cfd5df',
+  purple: '#6a1b9a',
+  green: '#1b8a5a',
+  red: '#c0392b',
+  orange: '#f39c12',
+  black: '#111827',
+  label: '#172033'
+};
+
+const HYPER_NODE = 'Hyperandrogenism';
+const ACTIVE_NODE_ID = '__SELECTED_ACTIVE__';
+const MOA_EDGE_PREFIX = '__MOA_EDGE__';
+let currentActive = null;
+let lastSignals = {};
+let lastParents = {};
+let searchHighlighted = null;
+
+const nodeIds = new Set(rawNodes.map(n => n.id));
+const outEdges = {};
+rawEdges.forEach(e => {
+  if (!outEdges[e.from]) outEdges[e.from] = [];
+  outEdges[e.from].push(e);
+});
+
+function signLabel(s) {
+  if (s === 1) return '↑';
+  if (s === -1) return '↓';
+  return 'mixed';
+}
+function signalClass(s) {
+  if (s === 1) return 'up';
+  if (s === -1) return 'down';
+  return 'mix';
+}
+function nodeColorForSignal(s) {
+  if (s === 1) return COLORS.green;
+  if (s === -1) return COLORS.red;
+  if (s === 0) return COLORS.orange;
+  return COLORS.grey;
+}
+function edgeColorForSignal(s) { return nodeColorForSignal(s); }
+
+function makeNode(n) {
+  const isHyper = n.id === HYPER_NODE;
+  const state = n.status ? `PCOS state: ${n.status}` : 'PCOS state: NA';
+  const score = n.score === null || n.score === undefined ? 'NA' : n.score;
+  return {
+    id: n.id,
+    label: n.label,
+    title: `<b>${n.label}</b><br>${state}<br>Score: ${score}`,
+    shape: 'dot',
+    size: isHyper ? 34 : 20,
+    color: {
+      background: isHyper ? '#fbd3d0' : COLORS.grey,
+      border: isHyper ? COLORS.black : '#98a2b3',
+      highlight: { background: '#fff7cc', border: COLORS.black }
+    },
+    borderWidth: isHyper ? 4 : 1,
+    hidden: false,
+    font: { color: COLORS.label, size: isHyper ? 18 : 14, face: 'Arial' }
+  };
+}
+function makeEdge(e) {
+  return {
+    id: e.id,
+    from: e.from,
+    to: e.to,
+    sign: e.sign,
+    arrows: 'to',
+    label: e.sign === 1 ? '+1' : '-1',
+    title: `${e.from} → ${e.to} (${e.sign === 1 ? '+1 activation' : '-1 inhibition'})`,
+    color: { color: COLORS.edgeGrey, highlight: '#344054' },
+    width: 1,
+    hidden: false,
+    smooth: { enabled: true, type: 'dynamic' },
+    font: { size: 9, color: '#667085', strokeWidth: 0 }
+  };
+}
+
+const nodes = new vis.DataSet(rawNodes.map(makeNode));
+const edges = new vis.DataSet(rawEdges.map(makeEdge));
+const container = document.getElementById('network');
+const network = new vis.Network(container, { nodes, edges }, {
+  interaction: { hover: true, tooltipDelay: 120, multiselect: true },
+  nodes: { scaling: { min: 12, max: 38 } },
+  edges: { smooth: { enabled: true, type: 'dynamic' }, arrows: { to: { enabled: true, scaleFactor: 0.6 } } },
+  physics: {
+    enabled: true,
+    solver: 'barnesHut',
+    barnesHut: { gravitationalConstant: -23000, centralGravity: 0.18, springLength: 170, springConstant: 0.025, damping: 0.10, avoidOverlap: 0.12 },
+    stabilization: { enabled: true, iterations: 850, updateInterval: 30 }
+  },
+  layout: { improvedLayout: true }
+});
+
+function removeInterventionElements() {
+  const moaEdgeIds = edges.getIds().filter(id => String(id).startsWith(MOA_EDGE_PREFIX));
+  if (moaEdgeIds.length) edges.remove(moaEdgeIds);
+  if (nodes.get(ACTIVE_NODE_ID)) nodes.remove(ACTIVE_NODE_ID);
+}
+
+function resetNetworkVisuals() {
+  removeInterventionElements();
+  nodes.update(rawNodes.map(makeNode));
+  edges.update(rawEdges.map(makeEdge));
+  document.querySelectorAll('.activeBtn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('modeBadge').textContent = 'Default view: complete PCOS network';
+  currentActive = null;
+  lastSignals = {};
+  lastParents = {};
+  searchHighlighted = null;
+  updateInfoPanel(null, {}, {}, []);
+}
+
+function getActiveNames() {
+  return [...new Set(moaTable.map(m => m.active))].sort((a,b) => a.localeCompare(b));
+}
+function renderActiveButtons() {
+  const box = document.getElementById('activeButtons');
+  box.innerHTML = '';
+  getActiveNames().forEach(active => {
+    const btn = document.createElement('button');
+    btn.className = 'activeBtn';
+    btn.textContent = active;
+    btn.addEventListener('click', () => selectActive(active));
+    box.appendChild(btn);
+  });
+}
+
+function mergeSignal(existing, incoming) {
+  if (existing === undefined) return incoming;
+  if (existing === incoming) return existing;
+  return 0; // mixed/conflicting
+}
+
+function propagateFromTargets(targets, maxDepth) {
+  const signals = {};
+  const parents = {};
+  const affectedEdges = {};
+  const queue = [];
+
+  targets.forEach(t => {
+    if (!nodeIds.has(t.target)) return;
+    signals[t.target] = mergeSignal(signals[t.target], t.direction);
+    parents[t.target] = null;
+    queue.push({ node: t.target, signal: t.direction, depth: 0, pathKey: t.target });
+  });
+
+  const seenStates = new Set();
+  while (queue.length > 0) {
+    const item = queue.shift();
+    const stateKey = `${item.node}|${item.signal}|${item.depth}|${item.pathKey}`;
+    if (seenStates.has(stateKey)) continue;
+    seenStates.add(stateKey);
+    if (item.depth >= maxDepth) continue;
+
+    (outEdges[item.node] || []).forEach(e => {
+      const nextSignal = item.signal * e.sign;
+      const prevSignal = signals[e.to];
+      signals[e.to] = mergeSignal(prevSignal, nextSignal);
+      affectedEdges[e.id] = mergeSignal(affectedEdges[e.id], nextSignal);
+      if (!parents[e.to]) parents[e.to] = { from: item.node, edgeId: e.id, signal: nextSignal };
+      if (item.depth + 1 <= maxDepth) {
+        // avoid very small cycles by not re-entering same node in same path
+        const nextPath = `${item.pathKey}>${e.to}`;
+        if (!item.pathKey.split('>').includes(e.to)) {
+          queue.push({ node: e.to, signal: nextSignal, depth: item.depth + 1, pathKey: nextPath });
+        }
+      }
+    });
+  }
+  return { signals, parents, affectedEdges };
+}
+
+
+function addInterventionElements(active, targets) {
+  removeInterventionElements();
+
+  nodes.add({
+    id: ACTIVE_NODE_ID,
+    label: active,
+    shape: 'box',
+    margin: 12,
+    color: {
+      background: '#fff7ed',
+      border: '#f97316',
+      highlight: { background: '#ffedd5', border: '#ea580c' }
+    },
+    borderWidth: 3,
+    font: { color: '#111827', size: 16, face: 'Arial', bold: true },
+    title: `<b>${active}</b><br>Selected intervention / active`
+  });
+
+  targets.forEach((t, i) => {
+    if (!nodeIds.has(t.target)) return;
+    const c = edgeColorForSignal(t.direction);
+    edges.add({
+      id: `${MOA_EDGE_PREFIX}${i}`,
+      hidden: false,
+      from: ACTIVE_NODE_ID,
+      to: t.target,
+      arrows: 'to',
+      label: t.direction === 1 ? 'increase' : 'decrease',
+      title: `${active} ${t.direction === 1 ? 'increases' : 'decreases'} ${t.target}`,
+      color: { color: c, highlight: c },
+      width: 4.5,
+      dashes: false,
+      smooth: { enabled: true, type: 'curvedCW', roundness: 0.22 },
+      font: { size: 12, color: c, strokeWidth: 2, strokeColor: '#ffffff' }
+    });
+  });
+}
+
+function selectActive(active) {
+  currentActive = active;
+  removeInterventionElements();
+  document.querySelectorAll('.activeBtn').forEach(b => b.classList.toggle('selected', b.textContent === active));
+  const maxDepth = parseInt(document.getElementById('depthSelect').value, 10);
+  const targets = moaTable.filter(m => m.active === active);
+  const { signals, parents, affectedEdges } = propagateFromTargets(targets, maxDepth);
+  lastSignals = signals;
+  lastParents = parents;
+
+  const targetIds = new Set(targets.map(t => t.target));
+
+  // update nodes
+  rawNodes.forEach(n => {
+    const id = n.id;
+    const sig = signals[id];
+    const isTarget = targetIds.has(id);
+    const isHyper = id === HYPER_NODE;
+    let background = COLORS.grey;
+    let border = '#98a2b3';
+    let borderWidth = 1;
+    let size = isHyper ? 34 : 20;
+    let fontColor = COLORS.label;
+
+    if (sig !== undefined) background = nodeColorForSignal(sig);
+    if (isTarget) { background = COLORS.purple; border = sig !== undefined ? nodeColorForSignal(sig) : COLORS.black; borderWidth = 5; size = 31; fontColor = '#111'; }
+    if (isHyper) { border = COLORS.black; borderWidth = 5; size = 36; }
+
+    const showNode = sig !== undefined || isTarget;
+    nodes.update({
+      id,
+      hidden: !showNode,
+      color: { background, border, highlight: { background: '#fff7cc', border: COLORS.black } },
+      borderWidth,
+      size,
+      font: { color: fontColor, size: isHyper ? 18 : 14, face: 'Arial', bold: isTarget || isHyper }
+    });
+  });
+
+  // update edges
+  rawEdges.forEach(e => {
+    const sig = affectedEdges[e.id];
+    if (sig !== undefined) {
+      const c = edgeColorForSignal(sig);
+      const lbl = sig === 0 ? 'mixed' : signLabel(sig);
+      edges.update({
+        id: e.id,
+        hidden: false,
+        label: lbl,
+        title: `${active} correction route: ${e.from} → ${e.to}<br>Predicted effect on downstream node: ${sig === 1 ? 'increase' : sig === -1 ? 'decrease' : 'mixed/conflicting'}<br>Ontology edge sign: ${e.sign === 1 ? '+1 activation/preservation' : '-1 inhibition/reversal'}`,
+        color: { color: c, highlight: c },
+        width: 4.0,
+        font: { size: 12, color: c, strokeWidth: 2, strokeColor: '#ffffff' }
+      });
+    } else {
+      edges.update({ id: e.id, hidden: true, label: '', color: { color: '#e5e7eb', highlight: '#cbd5e1' }, width: 0.8, font: { size: 0, color: '#e5e7eb' } });
+    }
+  });
+
+  // Add explicit active → target edges so the initial increase/decrease correction is visible.
+  addInterventionElements(active, targets);
+
+  const missing = targets.filter(t => !nodeIds.has(t.target)).map(t => t.target);
+  document.getElementById('modeBadge').textContent = `${active}: focused correction subnetwork | ${Object.keys(signals).length} affected node(s)` + (missing.length ? ` | missing target(s): ${missing.join(', ')}` : '');
+  updateInfoPanel(active, targets, signals, parents);
+  network.fit({ animation: { duration: 550, easingFunction: 'easeInOutQuad' } });
+}
+
+function getCascadeToHyper(parents) {
+  if (!parents[HYPER_NODE]) return [];
+  const chain = [];
+  let cur = HYPER_NODE;
+  const guard = new Set();
+  while (cur && !guard.has(cur)) {
+    guard.add(cur);
+    const p = parents[cur];
+    if (!p) { chain.unshift(cur); break; }
+    chain.unshift(cur);
+    cur = p.from;
+  }
+  return chain;
+}
+
+function updateInfoPanel(active, targets, signals, parents) {
+  const title = document.getElementById('selectedTitle');
+  const affectedCount = document.getElementById('affectedCount');
+  const hyperReached = document.getElementById('hyperReached');
+  const targetList = document.getElementById('targetList');
+  const cascadeList = document.getElementById('cascadeList');
+  const affectedList = document.getElementById('affectedList');
+
+  if (!active) {
+    title.textContent = 'No active selected';
+    affectedCount.textContent = '0';
+    hyperReached.textContent = '—';
+    targetList.innerHTML = '<li>—</li>';
+    cascadeList.innerHTML = '<li>—</li>';
+    affectedList.innerHTML = '<li>—</li>';
+    return;
+  }
+
+  title.textContent = active;
+  const entries = Object.entries(signals).sort((a,b) => a[0].localeCompare(b[0]));
+  affectedCount.textContent = entries.length;
+  hyperReached.textContent = signals[HYPER_NODE] !== undefined ? `Yes ${signLabel(signals[HYPER_NODE])}` : 'No';
+
+  targetList.innerHTML = targets.map(t => {
+    const missing = !nodeIds.has(t.target) ? ' <span class="missing">(missing)</span>' : '';
+    return `<li>${t.target} <span class="pill ${signalClass(t.direction)}">${signLabel(t.direction)}</span>${missing}</li>`;
+  }).join('') || '<li>—</li>';
+
+  const cascade = getCascadeToHyper(parents);
+  if (cascade.length) {
+    cascadeList.innerHTML = cascade.map((node, idx) => {
+      const sig = signals[node];
+      const arrow = idx < cascade.length - 1 ? ' →' : '';
+      return `<li>${node} <span class="pill ${signalClass(sig)}">${signLabel(sig)}</span>${arrow}</li>`;
+    }).join('');
+  } else {
+    cascadeList.innerHTML = '<li>Hyperandrogenism not reached within selected depth.</li>';
+  }
+
+  affectedList.innerHTML = entries.slice(0, 80).map(([node, sig]) => `<li>${node} <span class="pill ${signalClass(sig)}">${signLabel(sig)}</span></li>`).join('') || '<li>—</li>';
+  if (entries.length > 80) affectedList.innerHTML += `<li>... ${entries.length - 80} more nodes</li>`;
+}
+
+function searchNode() {
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  if (!q) return;
+  const match = rawNodes.find(n => n.id.toLowerCase().includes(q));
+  if (!match) {
+    document.getElementById('modeBadge').textContent = `No matching node for: ${q}`;
+    return;
+  }
+  network.selectNodes([match.id]);
+  network.focus(match.id, { scale: 1.25, animation: { duration: 500 } });
+  document.getElementById('modeBadge').textContent = `Search highlight: ${match.id}`;
+}
+
+document.getElementById('resetBtn').addEventListener('click', resetNetworkVisuals);
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const canvas = container.getElementsByTagName('canvas')[0];
+  if (!canvas) return;
+  const link = document.createElement('a');
+  const activePart = currentActive ? currentActive.replace(/[^a-z0-9]+/gi, '_') : 'network';
+  link.download = `MoA_propagation_${activePart}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+document.getElementById('depthSelect').addEventListener('change', () => { if (currentActive) selectActive(currentActive); });
+document.getElementById('searchBox').addEventListener('keydown', e => { if (e.key === 'Enter') searchNode(); });
+
+actionOnStabilized();
+function actionOnStabilized() {
+  network.once('stabilized', () => network.fit({ animation: { duration: 500 } }));
+}
+
+renderActiveButtons();
+resetNetworkVisuals();
+</script>
+</body>
+</html>
